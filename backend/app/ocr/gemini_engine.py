@@ -44,7 +44,7 @@ class GeminiVisionEngine:
                 from google.genai import types
                 
                 print(f"[GeminiVisionEngine] Attempting extraction with API key index {key_idx} (starts with: {current_key[:6]}...)")
-                client = genai.Client(api_key=current_key)
+                client = genai.Client(api_key=current_key, http_options=types.HttpOptions(timeout=45000))
                 
                 pil_images = []
                 for p in image_paths:
@@ -56,7 +56,7 @@ class GeminiVisionEngine:
 
                 prompt = f"""
 You are an expert Legal Metrology (Packaged Commodities Rules 2011) AI Inspector analyzing {len(pil_images)} packaging photos for a {product_category}.
-You MUST inspect all {len(pil_images)} photos and accurately locate which photo contains each statutory declaration.
+You MUST inspect all {len(pil_images)} photos and accurately locate which photo contains each statutory declaration. Never guess, infer, or invent a declaration. If text is not clearly readable in the supplied photos, return JSON null for value, detected=false, confidence=0.0. Never return schema examples, placeholder phrases, NA, or string as extracted values.
 
 CRITICAL INSTRUCTIONS FOR MULTI-PHOTO LOCALIZATION:
 For every statutory declaration:
@@ -81,16 +81,16 @@ Statutory Declarations to extract:
 
 Return ONLY valid JSON matching this structure:
 {{
-  "product_name": "Extracted product name or null",
+  "product_name": null,
   "declarations": {{
-    "net_quantity": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.99 }},
-    "mrp": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "unit_sale_price": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "mfg_date": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "best_before": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "manufacturer": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "consumer_care": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
-    "country_of_origin": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.99 }}
+    "net_quantity": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.99 }},
+    "mrp": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "unit_sale_price": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "mfg_date": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "best_before": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "manufacturer": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "consumer_care": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98 }},
+    "country_of_origin": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.99 }}
   }}
 }}
 """
@@ -222,13 +222,13 @@ Return ONLY valid JSON:
   "product_name": "{product_title}",
   "brand": "{product_title.split()[0] if product_title else ''}",
   "declarations": {{
-    "mrp": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
-    "unit_sale_price": {{ "value": "Extracted string or null", "detected": true, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
-    "net_quantity": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
-    "country_of_origin": {{ "value": "Extracted string or null", "detected": true, "image_index": null, "box_2d": null, "confidence": 0.99, "source": "WEBSITE_SPECIFICATION" }},
-    "manufacturer": {{ "value": "Extracted string or null", "detected": true, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
-    "consumer_care": {{ "value": "Extracted string or null", "detected": true, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
-    "best_before": {{ "value": "Extracted string or null", "detected": true, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
+    "mrp": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
+    "unit_sale_price": {{ "value": null, "detected": false, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
+    "net_quantity": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
+    "country_of_origin": {{ "value": null, "detected": false, "image_index": null, "box_2d": null, "confidence": 0.99, "source": "WEBSITE_SPECIFICATION" }},
+    "manufacturer": {{ "value": null, "detected": false, "image_index": 1, "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0.98, "source": "PACKAGING_PHOTO" }},
+    "consumer_care": {{ "value": null, "detected": false, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
+    "best_before": {{ "value": null, "detected": false, "image_index": null, "box_2d": null, "confidence": 0.95, "source": "WEBSITE_SPECIFICATION" }},
     "mfg_date": {{ "value": "Extracted string or null", "detected": false, "image_index": null, "box_2d": null, "confidence": 0.0, "source": "EXEMPT_RULE_6_10" }}
   }}
 }}
