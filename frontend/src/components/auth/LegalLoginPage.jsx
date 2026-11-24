@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../supabaseClient";
 import {
-  OFFICER_PUBLIC_COLUMNS,
   LOCAL_DEMO_PASSWORD,
   passwordsMatch,
   publicOfficerProfile
