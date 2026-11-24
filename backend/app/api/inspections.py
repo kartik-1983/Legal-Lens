@@ -305,7 +305,7 @@ def direct_scan(
     product = Product(
         name=supplied_name,
         category=category,
-        brand=product_name.split()[0] if product_name else "Generic",
+        brand=supplied_name.split()[0] if supplied_name else "Generic",
         barcode=None,
         is_imported=False
     )
