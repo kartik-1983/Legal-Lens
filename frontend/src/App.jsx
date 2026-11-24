@@ -4587,7 +4587,7 @@ function InspectionDetail({ inspection, users = [] }) {
   const productName = (derivedProduct && derivedProduct !== "Packaged Commodity" && derivedProduct !== "") ? derivedProduct
     : ((rawExtractedName && rawExtractedName !== "Packaged Commodity" && rawExtractedName !== "") ? rawExtractedName
       : ((insp.product_name && insp.product_name !== "Packaged Commodity" && insp.product_name !== "") ? insp.product_name
-        : "NA"));
+        : "Awaiting OCR identification"));
 
   const caseId = insp.case_number || (typeof insp.id === "number" ? `LM/2026/${String(insp.id).padStart(6, "0")}` : (insp.id || "LM/2026/000001"));
 
@@ -4619,7 +4619,7 @@ function InspectionDetail({ inspection, users = [] }) {
       const fieldLabel = d.label || (typeof fieldKey === "string" ? fieldKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Declaration");
       const isExempt = d.status === "EXEMPT" || d.is_exempt === true || (isEcom && fieldKey === "mfg_date");
       const rawTextVal = d.value || d.detected_value || d.raw_text || d.text || d.detected;
-      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && String(rawTextVal).toLowerCase() !== "none" && String(rawTextVal).toLowerCase() !== "null");
+      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && !["none", "null", "na", "n/a", "missing", "not found", "extracted string or null", "string"].includes(String(rawTextVal).trim().toLowerCase()));
       const isDetected = (d.detected === true || d.is_present === true) && hasValue;
       
       let statusVal = "FAIL";
@@ -4635,8 +4635,9 @@ function InspectionDetail({ inspection, users = [] }) {
       } else if (d.status === "REVIEW" || (!isEcom && fieldKey === "country_of_origin" && !hasValue && !insp.is_imported && !insp.product?.is_imported)) {
         statusVal = "REVIEW";
         detectedVal = hasValue ? String(rawTextVal) : "Requires Verification (Rule 6(1)(f))";
-        confVal = 90;
-        reasonVal = reasonVal || "Exempt under Rule 6(1)(f) PCR 2011 if manufactured domestically in India; mandatory if imported.";
+        const reviewConfidence = typeof d.confidence === "number" ? d.confidence : (typeof d.confidence_score === "number" ? d.confidence_score : 0);
+        confVal = hasValue ? Math.round(reviewConfidence > 1 ? reviewConfidence : reviewConfidence * 100) : 0;
+        reasonVal = reasonVal || (hasValue ? "Extracted value requires officer verification." : "No reliable OCR evidence is available. Review the uploaded package images before making a compliance determination.");
       } else if (isDetected || hasValue) {
         statusVal = (d.status === "COMPLIANT" || d.status === "PASS" || d.is_compliant === true) ? "PASS" : (d.status || "PASS");
         detectedVal = String(rawTextVal);
@@ -4683,7 +4684,8 @@ function InspectionDetail({ inspection, users = [] }) {
   const failCount = reqs.filter((r) => r.status === "FAIL").length;
   const exemptCount = reqs.filter((r) => r.status === "EXEMPT").length;
   const reviewCount = reqs.filter((r) => r.status === "REVIEW").length;
-  const avgConf = Math.round(reqs.reduce((s, r) => s + (r.confidence || 90), 0) / (reqs.length || 1));
+  const confidenceValues = reqs.filter((r) => r.status === "PASS" || (r.status === "REVIEW" && r.is_present)).map((r) => Number(r.confidence)).filter((v) => Number.isFinite(v) && v >= 0);
+  const avgConf = confidenceValues.length ? Math.round(confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length) : 0;
 
   // 3-Tier Classification:
   // 1. All mandatory pass (failCount === 0 && passCount > 0) -> COMPLIANT (or REVIEW if verification items exist)
@@ -7195,6 +7197,8 @@ function EditUserModal({ user, onClose, onSave }) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
+    // When Supabase is configured, a cached profile is never proof of authentication.
+    if (isSupabaseConfigured()) return null;
     try {
       const saved = localStorage.getItem("legallens_current_user");
       return saved ? JSON.parse(saved) : null;
@@ -7202,6 +7206,63 @@ export default function App() {
       return null;
     }
   });
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured());
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+
+    let active = true;
+    const restoreOfficerSession = async (session) => {
+      if (!session?.user) {
+        if (active) {
+          setCurrentUser(null);
+          localStorage.removeItem("legallens_current_user");
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("officer_profiles")
+        .select("id, name, email, badge, role, jurisdiction, active, created_at")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error || !profile || profile.active === false) {
+        console.warn("Could not restore officer profile:", error?.message || "Profile missing or disabled");
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        localStorage.removeItem("legallens_current_user");
+      } else {
+        const restoredUser = {
+          ...profile,
+          initials: profile.name?.split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
+        };
+        setCurrentUser(restoredUser);
+        localStorage.setItem("legallens_current_user", JSON.stringify(restoredUser));
+      }
+      setAuthReady(true);
+    };
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) console.warn("Session restore notice:", error.message);
+      restoreOfficerSession(data?.session || null);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Do not await Supabase queries inside this callback.
+      Promise.resolve().then(() => restoreOfficerSession(session));
+    });
+
+    return () => {
+      active = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   const [page, setPage] = useState(() => {
     const savedUser = localStorage.getItem("legallens_current_user");
@@ -7566,6 +7627,14 @@ export default function App() {
     localStorage.setItem("legallens_show_login", val ? "true" : "false");
   };
 
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
+        <div className="flex items-center gap-3 text-sm"><span className="animate-spin rounded-full h-5 w-5 border-2 border-amber-400 border-t-transparent" /> Verifying secure session…</div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     if (showLogin || page === "login") {
       return (
@@ -7614,7 +7683,11 @@ export default function App() {
         isDark={isDark}
         toggleTheme={toggleTheme}
         isDbConnected={isDbConnected}
-        onSignOut={() => {
+        onSignOut={async () => {
+          if (isSupabaseConfigured() && supabase) {
+            const { error } = await supabase.auth.signOut();
+            if (error) console.warn("Supabase sign-out notice:", error.message);
+          }
           setCurrentUser(null);
           localStorage.removeItem("legallens_current_user");
           handleSetShowLogin(false);

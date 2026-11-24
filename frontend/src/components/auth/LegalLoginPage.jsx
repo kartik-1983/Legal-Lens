@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../supabaseClient";
 import {
-  OFFICER_PUBLIC_COLUMNS,
   LOCAL_DEMO_PASSWORD,
   passwordsMatch,
   publicOfficerProfile
@@ -473,64 +472,67 @@ export function OfficerLoginPage({ onLogin, users = [], onBackToPortal, onSwitch
     e?.preventDefault();
     setLoginError("");
 
-    const identifier = email.trim();
+    const identifier = email.trim().toLowerCase();
     if (!identifier || !password) {
-      setLoginError("Please enter your official Officer ID / Email and security password.");
+      setLoginError("Please enter your official email address and password.");
+      return;
+    }
+    if (!identifier.includes("@")) {
+      setLoginError("Please sign in with your official email address. Badge-ID sign-in will be added through a secure server-side lookup.");
       return;
     }
 
     setLoading(true);
-
     try {
       if (isSupabaseConfigured() && supabase) {
-        let query = supabase
-          .from("officer_users")
-          .select(`${OFFICER_PUBLIC_COLUMNS}, pass`);
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: identifier,
+          password,
+        });
 
-        if (identifier.includes("@")) {
-          query = query.ilike("email", identifier);
-        } else {
-          query = query.or(`badge.ilike.${identifier},email.ilike.${identifier}`);
+        if (authError) throw authError;
+        if (!authData?.user) throw new Error("Authentication did not return a user.");
+
+        const { data: profile, error: profileError } = await supabase
+          .from("officer_profiles")
+          .select("id, name, email, badge, role, jurisdiction, active, created_at")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+        if (!profile) {
+          await supabase.auth.signOut();
+          throw new Error("Your account is authenticated but has no officer profile. Contact the system administrator.");
+        }
+        if (profile.active === false) {
+          await supabase.auth.signOut();
+          throw new Error("This officer account is disabled. Contact an administrator.");
         }
 
-        const { data, error } = await query.maybeSingle();
-
-        if (!error && data) {
-          if (data.active === false) {
-            setLoginError("This officer account is disabled. Contact an administrator.");
-            setLoading(false);
-            return;
-          }
-          if (!passwordsMatch(data.pass, password)) {
-            setLoginError("Invalid security key / password.");
-            setLoading(false);
-            return;
-          }
-
-          onLogin(publicOfficerProfile(data));
-          return;
-        }
+        onLogin({
+          ...profile,
+          initials: profile.name?.split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
+        });
+        return;
       }
 
+      // Local demo mode is available only when Supabase is not configured.
       const localUser = (users || []).find(
         (u) =>
-          u.badge?.toLowerCase() === identifier.toLowerCase() ||
-          u.email?.toLowerCase() === identifier.toLowerCase()
+          u.email?.toLowerCase() === identifier
       );
-
       if (localUser && passwordsMatch(localUser.pass || LOCAL_DEMO_PASSWORD, password)) {
         if (localUser.active === false) {
           setLoginError("This officer account is disabled. Contact an administrator.");
-          setLoading(false);
           return;
         }
         onLogin(publicOfficerProfile(localUser));
         return;
       }
 
-      setLoginError("Invalid Officer ID / Email or security password.");
+      throw new Error("Invalid official email or password.");
     } catch (err) {
-      console.error("Login verification error:", err);
+      console.error("Officer authentication error:", err);
       setLoginError(err?.message || "Sign-in failed. Please try again.");
     } finally {
       setLoading(false);
@@ -692,12 +694,12 @@ export function OfficerLoginPage({ onLogin, users = [], onBackToPortal, onSwitch
 
           <form className="premium-login-form" onSubmit={handleOfficerLogin}>
             <div className="premium-input-group">
-              <label>Officer Badge ID or Official Email</label>
+              <label>Official Email Address</label>
               <div className="premium-input">
                 <span className="input-symbol">👤</span>
                 <input
-                  type="text"
-                  placeholder="e.g. LMD-DL-842 or officer@lm.gov.in"
+                  type="email"
+                  placeholder="e.g. officer@lm.gov.in"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="username"

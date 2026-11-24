@@ -146,6 +146,13 @@ def upload_inspection_images(
     for file in files:
         fname = f"{uuid.uuid4().hex}_{file.filename}"
         file_path = os.path.join(upload_dir, fname)
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+        if file_size <= 0 or file_size > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail=f"{file.filename}: image must be between 1 byte and 12 MB.")
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=415, detail=f"{file.filename}: upload an image file.")
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -291,10 +298,14 @@ def direct_scan(
     runs EasyOCR & DeclarationExtractor across all images, evaluates PCR 2011 compliance,
     and returns the complete inspection result.
     """
+    supplied_name = (product_name or "").strip()
+    if supplied_name.lower() in {"", "na", "n/a", "none", "null", "packaged commodity", "product"}:
+        supplied_name = "Product awaiting identification"
+
     product = Product(
-        name=product_name,
+        name=supplied_name,
         category=category,
-        brand=product_name.split()[0] if product_name else "Generic",
+        brand=supplied_name.split()[0] if supplied_name else "Generic",
         barcode=None,
         is_imported=False
     )
@@ -324,9 +335,21 @@ def direct_scan(
     all_detections = []
     saved_images_list = []
 
+    if not files:
+        raise HTTPException(status_code=400, detail="Upload at least one clear packaging photo.")
+    if len(files) > 6:
+        raise HTTPException(status_code=400, detail="Upload no more than 6 packaging photos per inspection.")
+
     print(f"\n[DIRECT-SCAN] Received {len(files)} packaging photos: {[f.filename for f in files]}")
 
     for idx, file in enumerate(files):
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+        if file_size <= 0 or file_size > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail=f"{file.filename}: image must be between 1 byte and 12 MB.")
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=415, detail=f"{file.filename}: upload an image file.")
         safe_name = f"{uuid.uuid4().hex}_{file.filename}"
         file_path = os.path.join(upload_dir, safe_name)
         with open(file_path, "wb") as buffer:
@@ -394,9 +417,11 @@ def direct_scan(
                     gemini_result = {}
 
             if gemini_result and "declarations" in gemini_result and not gemini_result.get("error"):
-                gemini_successful = True
+                valid_values = {"", "null", "none", "n/a", "na", "string", "missing", "not found", "extracted string or null", "extracted product name or null"}
+                usable_count = sum(1 for item in gemini_result.get("declarations", {}).values() if isinstance(item, dict) and str(item.get("value") or "").strip().lower() not in valid_values)
+                gemini_successful = usable_count > 0
                 print(f"[GEMINI-VISION] Successfully extracted declarations across all {len(image_paths)} photos:")
-                if gemini_result.get("product_name") and gemini_result["product_name"] not in ["string", ""]:
+                if gemini_result.get("product_name") and str(gemini_result["product_name"]).strip().lower() not in ["string", "", "na", "n/a", "null", "none"]:
                     product.name = gemini_result["product_name"]
                     product.brand = gemini_result["product_name"].split()[0]
                     db.commit()
@@ -404,7 +429,8 @@ def direct_scan(
 
                 # Populate declarations_dict from Gemini
                 for k, v in gemini_result["declarations"].items():
-                    if v and v.get("value"):
+                    valid_values = {"", "null", "none", "n/a", "na", "string", "missing", "not found", "extracted string or null", "extracted product name or null"}
+                    if isinstance(v, dict) and str(v.get("value") or "").strip().lower() not in valid_values:
                         raw_box = v.get("box_2d")
                         box = raw_box if (isinstance(raw_box, list) and len(raw_box) == 4) else None
                         img_idx = max(0, min(int(v.get("image_index", 1)) - 1, max(0, len(saved_images_list) - 1)))
@@ -522,8 +548,8 @@ def direct_scan(
         if loc:
             inspection.location = loc
 
-    inspection.status = eval_result.get("overall_status", "NON_COMPLIANT")
-    inspection.score = eval_result.get("overall_score", 0.0)
+    inspection.status = eval_result.get("overall_status", "REVIEW")
+    inspection.score = eval_result.get("score", eval_result.get("overall_score", 0.0))
     db.commit()
     db.refresh(inspection)
 
