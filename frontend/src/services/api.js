@@ -3,6 +3,11 @@ let cleanBase = rawBase ? rawBase.trim().replace(/\/+$/, '') : '/api';
 if (cleanBase.startsWith('http') && !cleanBase.endsWith('/api')) {
   cleanBase = `${cleanBase}/api`;
 }
+// On a phone, localhost points to the phone rather than the laptop hosting FastAPI.
+const isRemoteDevice = typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+if (isRemoteDevice && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/api)?$/i.test(cleanBase)) {
+  cleanBase = window.location.protocol + "//" + window.location.hostname + ":8000/api";
+}
 const API_BASE = cleanBase;
 
 class ApiService {
@@ -194,14 +199,27 @@ class ApiService {
     for (const f of files) {
       formData.append('files', f);
     }
-    const res = await fetch(`${API_BASE}/inspections/direct-scan`, {
-      method: 'POST',
-      headers: this.getUserHeaders(),
-      body: formData
-    });
-    this.handleUnauthorized(res);
-    if (!res.ok) throw new Error('Direct OCR scan failed');
-    return await res.json();
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 180000);
+    try {
+      const res = await fetch(`${API_BASE}/inspections/direct-scan`, {
+        method: 'POST',
+        headers: this.getUserHeaders(),
+        body: formData,
+        signal: controller.signal
+      });
+      this.handleUnauthorized(res);
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.detail || `Direct OCR scan failed (HTTP ${res.status})`);
+      }
+      return await res.json();
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('Inspection processing timed out after 3 minutes. Check backend logs and try smaller, clearer photos.');
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   }
 
   static async ecomScanUrl({ url, category, location, files = [] }) {
