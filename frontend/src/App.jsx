@@ -4619,7 +4619,7 @@ function InspectionDetail({ inspection, users = [] }) {
       const fieldLabel = d.label || (typeof fieldKey === "string" ? fieldKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Declaration");
       const isExempt = d.status === "EXEMPT" || d.is_exempt === true || (isEcom && fieldKey === "mfg_date");
       const rawTextVal = d.value || d.detected_value || d.raw_text || d.text || d.detected;
-      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && String(rawTextVal).toLowerCase() !== "none" && String(rawTextVal).toLowerCase() !== "null");
+      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && !["none", "null", "na", "n/a", "missing", "not found", "extracted string or null", "string"].includes(String(rawTextVal).trim().toLowerCase()));
       const isDetected = (d.detected === true || d.is_present === true) && hasValue;
       
       let statusVal = "FAIL";
