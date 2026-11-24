@@ -4587,7 +4587,7 @@ function InspectionDetail({ inspection, users = [] }) {
   const productName = (derivedProduct && derivedProduct !== "Packaged Commodity" && derivedProduct !== "") ? derivedProduct
     : ((rawExtractedName && rawExtractedName !== "Packaged Commodity" && rawExtractedName !== "") ? rawExtractedName
       : ((insp.product_name && insp.product_name !== "Packaged Commodity" && insp.product_name !== "") ? insp.product_name
-        : "NA"));
+        : "Awaiting OCR identification"));
 
   const caseId = insp.case_number || (typeof insp.id === "number" ? `LM/2026/${String(insp.id).padStart(6, "0")}` : (insp.id || "LM/2026/000001"));
 
@@ -4619,7 +4619,7 @@ function InspectionDetail({ inspection, users = [] }) {
       const fieldLabel = d.label || (typeof fieldKey === "string" ? fieldKey.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Declaration");
       const isExempt = d.status === "EXEMPT" || d.is_exempt === true || (isEcom && fieldKey === "mfg_date");
       const rawTextVal = d.value || d.detected_value || d.raw_text || d.text || d.detected;
-      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && String(rawTextVal).toLowerCase() !== "none" && String(rawTextVal).toLowerCase() !== "null");
+      const hasValue = Boolean(rawTextVal && String(rawTextVal).trim() !== "" && String(rawTextVal).trim() !== '""' && !["none", "null", "na", "n/a", "missing", "not found", "extracted string or null", "string"].includes(String(rawTextVal).trim().toLowerCase()));
       const isDetected = (d.detected === true || d.is_present === true) && hasValue;
       
       let statusVal = "FAIL";
@@ -4635,8 +4635,9 @@ function InspectionDetail({ inspection, users = [] }) {
       } else if (d.status === "REVIEW" || (!isEcom && fieldKey === "country_of_origin" && !hasValue && !insp.is_imported && !insp.product?.is_imported)) {
         statusVal = "REVIEW";
         detectedVal = hasValue ? String(rawTextVal) : "Requires Verification (Rule 6(1)(f))";
-        confVal = 90;
-        reasonVal = reasonVal || "Exempt under Rule 6(1)(f) PCR 2011 if manufactured domestically in India; mandatory if imported.";
+        const reviewConfidence = typeof d.confidence === "number" ? d.confidence : (typeof d.confidence_score === "number" ? d.confidence_score : 0);
+        confVal = hasValue ? Math.round(reviewConfidence > 1 ? reviewConfidence : reviewConfidence * 100) : 0;
+        reasonVal = reasonVal || (hasValue ? "Extracted value requires officer verification." : "No reliable OCR evidence is available. Review the uploaded package images before making a compliance determination.");
       } else if (isDetected || hasValue) {
         statusVal = (d.status === "COMPLIANT" || d.status === "PASS" || d.is_compliant === true) ? "PASS" : (d.status || "PASS");
         detectedVal = String(rawTextVal);
@@ -4683,7 +4684,8 @@ function InspectionDetail({ inspection, users = [] }) {
   const failCount = reqs.filter((r) => r.status === "FAIL").length;
   const exemptCount = reqs.filter((r) => r.status === "EXEMPT").length;
   const reviewCount = reqs.filter((r) => r.status === "REVIEW").length;
-  const avgConf = Math.round(reqs.reduce((s, r) => s + (r.confidence || 90), 0) / (reqs.length || 1));
+  const confidenceValues = reqs.filter((r) => r.status === "PASS" || (r.status === "REVIEW" && r.is_present)).map((r) => Number(r.confidence)).filter((v) => Number.isFinite(v) && v >= 0);
+  const avgConf = confidenceValues.length ? Math.round(confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length) : 0;
 
   // 3-Tier Classification:
   // 1. All mandatory pass (failCount === 0 && passCount > 0) -> COMPLIANT (or REVIEW if verification items exist)
