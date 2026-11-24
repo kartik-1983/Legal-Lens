@@ -343,6 +343,13 @@ def direct_scan(
     print(f"\n[DIRECT-SCAN] Received {len(files)} packaging photos: {[f.filename for f in files]}")
 
     for idx, file in enumerate(files):
+        file.file.seek(0, os.SEEK_END)
+        file_size = file.file.tell()
+        file.file.seek(0)
+        if file_size <= 0 or file_size > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail=f"{file.filename}: image must be between 1 byte and 12 MB.")
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=415, detail=f"{file.filename}: upload an image file.")
         safe_name = f"{uuid.uuid4().hex}_{file.filename}"
         file_path = os.path.join(upload_dir, safe_name)
         with open(file_path, "wb") as buffer:
