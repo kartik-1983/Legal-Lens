@@ -7195,6 +7195,8 @@ function EditUserModal({ user, onClose, onSave }) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
+    // When Supabase is configured, a cached profile is never proof of authentication.
+    if (isSupabaseConfigured()) return null;
     try {
       const saved = localStorage.getItem("legallens_current_user");
       return saved ? JSON.parse(saved) : null;
@@ -7202,6 +7204,63 @@ export default function App() {
       return null;
     }
   });
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured());
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+
+    let active = true;
+    const restoreOfficerSession = async (session) => {
+      if (!session?.user) {
+        if (active) {
+          setCurrentUser(null);
+          localStorage.removeItem("legallens_current_user");
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from("officer_profiles")
+        .select("id, name, email, badge, role, jurisdiction, active, created_at")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (!active) return;
+      if (error || !profile || profile.active === false) {
+        console.warn("Could not restore officer profile:", error?.message || "Profile missing or disabled");
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        localStorage.removeItem("legallens_current_user");
+      } else {
+        const restoredUser = {
+          ...profile,
+          initials: profile.name?.split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(),
+        };
+        setCurrentUser(restoredUser);
+        localStorage.setItem("legallens_current_user", JSON.stringify(restoredUser));
+      }
+      setAuthReady(true);
+    };
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) console.warn("Session restore notice:", error.message);
+      restoreOfficerSession(data?.session || null);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Do not await Supabase queries inside this callback.
+      Promise.resolve().then(() => restoreOfficerSession(session));
+    });
+
+    return () => {
+      active = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   const [page, setPage] = useState(() => {
     const savedUser = localStorage.getItem("legallens_current_user");
@@ -7566,6 +7625,14 @@ export default function App() {
     localStorage.setItem("legallens_show_login", val ? "true" : "false");
   };
 
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
+        <div className="flex items-center gap-3 text-sm"><span className="animate-spin rounded-full h-5 w-5 border-2 border-amber-400 border-t-transparent" /> Verifying secure session…</div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     if (showLogin || page === "login") {
       return (
@@ -7614,7 +7681,11 @@ export default function App() {
         isDark={isDark}
         toggleTheme={toggleTheme}
         isDbConnected={isDbConnected}
-        onSignOut={() => {
+        onSignOut={async () => {
+          if (isSupabaseConfigured() && supabase) {
+            const { error } = await supabase.auth.signOut();
+            if (error) console.warn("Supabase sign-out notice:", error.message);
+          }
           setCurrentUser(null);
           localStorage.removeItem("legallens_current_user");
           handleSetShowLogin(false);
