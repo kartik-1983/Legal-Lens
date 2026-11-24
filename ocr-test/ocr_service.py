@@ -37,8 +37,7 @@ class OCRService:
 
     @property
     def supabase_url(self) -> str:
-        return (os.getenv("SUPABASE_URL") or "https://snxwxahlotngsllqmvyj.supabase.co").rstrip("/")
-
+        return (os.getenv("SUPABASE_URL") or "https://scfrkihhfvkiezgnmrlm.supabase.co").rstrip("/")
     @property
     def supabase_key(self) -> str:
         return (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "sb_publishable_YUcFQBnkkTH1_HNSvRZ9ug_yOIkCl_3").strip()

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OCR_WEB_SERVICE_URL: str = "https://www.ocrwebservice.com/restservices/processDocument"
 
     # Supabase Configuration
-    SUPABASE_URL: str = "https://snxwxahlotngsllqmvyj.supabase.co"
+    SUPABASE_URL: str = "https://scfrkihhfvkiezgnmrlm.supabase.co"
     SUPABASE_ANON_KEY: str = "sb_publishable_YUcFQBnkkTH1_HNSvRZ9ug_yOIkCl_3"
     SUPABASE_SERVICE_ROLE_KEY: str = ""
 
