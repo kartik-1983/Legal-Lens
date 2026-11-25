@@ -397,12 +397,15 @@ def direct_scan(
     # 1. Primary: Run Gemini Vision AI on all images (Lightning fast ~1.5s)
     all_detections = []
     gemini_successful = False
+    gemini_configured = False
+    ocr_file_diagnostics = []
     declarations_dict = {}
 
     try:
         from app.ocr.gemini_engine import GeminiVisionEngine
         gemini_engine = GeminiVisionEngine(api_key=settings.GEMINI_API_KEY)
-        if gemini_engine.is_available():
+        gemini_configured = gemini_engine.is_available()
+        if gemini_configured:
             image_paths = [img.get("local_path") or img["original_path"] for img in saved_images_list]
             print(f"\n==========================================================================")
             print(f"[GEMINI-VISION] Dispatching {len(image_paths)} packaging photo(s) to Gemini Vision AI...")
@@ -475,6 +478,12 @@ def direct_scan(
                 img_p = img.get("local_path") or img["original_path"]
                 detections = service.ocr_engine.extract_text(img_p, image_id=img["angle"])
                 all_detections.extend(detections)
+                ocr_file_diagnostics.append({
+                    "filename": img.get("filename"),
+                    "image_angle": img.get("angle"),
+                    "text_regions": len(detections)
+                })
+                print(f"[OCR] {img.get('filename')}: {len(detections)} text region(s) detected.")
             except Exception as e:
                 print(f"[OCR] Note on {img['filename']}: {e}")
         declarations_dict = DeclarationExtractor.extract_declarations(all_detections, category)
@@ -566,7 +575,15 @@ def direct_scan(
         "declarations": saved_declarations,
         "images": saved_images_list,
         "violations": eval_result.get("violations", []),
-        "ocr_detections": all_detections
+        "ocr_detections": all_detections,
+        "ocr_diagnostics": {
+            "gemini_configured": gemini_configured,
+            "gemini_successful": gemini_successful,
+            "easyocr_available": bool(getattr(service.ocr_engine, "_available", None)) if service.ocr_engine else False,
+            "easyocr_text_regions": len(all_detections),
+            "images": ocr_file_diagnostics,
+            "extraction_unavailable": not gemini_successful and not all_detections
+        }
     }
 
 
