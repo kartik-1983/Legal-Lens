@@ -579,7 +579,7 @@ def direct_scan(
         "ocr_diagnostics": {
             "gemini_configured": gemini_configured,
             "gemini_successful": gemini_successful,
-            "easyocr_available": bool(getattr(service.ocr_engine, "_available", None)) if service.ocr_engine else False,
+            "easyocr_available": bool(__import__("app.ocr.engine", fromlist=["_easyocr_available"])._easyocr_available),
             "easyocr_text_regions": len(all_detections),
             "images": ocr_file_diagnostics,
             "extraction_unavailable": not gemini_successful and not all_detections
