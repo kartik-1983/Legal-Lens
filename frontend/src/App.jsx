@@ -4563,19 +4563,30 @@ function InspectionDetail({ inspection, users = [] }) {
       } else if (url.startsWith('/api')) {
         url = url.replace('/api', ApiService.getApiBase());
       }
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to generate PDF");
+      if (!cno) throw new Error("This inspection has no case number. Refresh the inspection and try again.");
+      const response = await fetch(url, { headers: ApiService.getUserHeaders() });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.detail || `PDF request failed (HTTP ${response.status}). Check that the backend is running.`);
+      }
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().includes("application/pdf")) {
+        const responseText = await response.text().catch(() => "");
+        throw new Error(responseText.slice(0, 180) || "The server did not return a PDF file.");
+      }
       const blob = await response.blob();
+      if (!blob.size) throw new Error("The generated PDF is empty. Please try again.");
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `Report_${(cno || 'inspection').replace(/\//g, '_')}.pdf`;
+      a.download = `Report_${(cno || 'inspection').replace(/\\//g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
     } catch (err) {
       console.error("PDF generation error:", err);
+      window.alert(err?.message || "Unable to generate the PDF. Check the browser console and backend terminal.");
     } finally {
       setIsGeneratingPdf(false);
     }
