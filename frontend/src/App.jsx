@@ -3805,7 +3805,7 @@ function NewInspection({ onFinish, currentUser }) {
             ...scanRes,
             inspection_no: scanRes.case_number || generatedCaseNo,
             declarations: scanRes.declarations || [],
-            status: scanRes.status || "NON_COMPLIANT"
+            status: scanRes.status || "REVIEW"
           };
         }
       } catch (err) {
@@ -4704,9 +4704,15 @@ function InspectionDetail({ inspection, users = [] }) {
   // 3. Otherwise -> REVIEW / NON_COMPLIANT
   const mandatoryCount = mandatoryReqs.length;
   const passRatio = mandatoryCount > 0 ? passCount / mandatoryCount : (passCount / (reqs.length || 1));
-  const computedStatus = (failCount === 0 && passCount > 0)
-    ? (reviewCount > 0 ? "REVIEW" : "COMPLIANT")
-    : (passRatio < 0.50 ? "NON_COMPLIANT" : (failCount > 0 ? "NON_COMPLIANT" : "REVIEW"));
+  // Absence of OCR evidence is uncertainty, not proof of a legal violation.
+  // Only classify as NON_COMPLIANT when the rule engine has confirmed failures.
+  const computedStatus = failCount > 0
+    ? "NON_COMPLIANT"
+    : reviewCount > 0
+      ? "REVIEW"
+      : passCount > 0
+        ? "COMPLIANT"
+        : "REVIEW";
 
   const inspectionStatus = (insp.status && insp.status !== "REVIEW" && !((insp.status === "NON_COMPLIANT" || insp.status === "NON-COMPLIANT") && failCount === 0)) ? insp.status : computedStatus;
 
